@@ -3,6 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from app.auth.dependencies import require_roles
 from app.database import get_db
@@ -110,3 +111,39 @@ def top_tasks(
         }
         for row in rows
     ]
+
+
+@router.get("/delivery-time")
+def delivery_time(
+    current_user: User = Depends(
+        require_roles("operator", "admin")
+    ),
+    db: Session = Depends(get_db),
+):
+    result = db.execute(
+        text(
+            """
+            SELECT
+                percentile_cont(0.5)
+                WITHIN GROUP (
+                    ORDER BY
+                    EXTRACT(
+                        EPOCH FROM (
+                            delivered.changed_at
+                            - submitted.changed_at
+                        )
+                    )
+                ) AS median_seconds
+            FROM status_history submitted
+            JOIN status_history delivered
+                ON submitted.request_id =
+                   delivered.request_id
+            WHERE submitted.new_status = 'submitted'
+              AND delivered.new_status = 'delivered'
+            """
+        )
+    ).scalar()
+
+    return {
+        "median_seconds": result
+    }

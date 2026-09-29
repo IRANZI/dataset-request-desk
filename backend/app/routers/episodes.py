@@ -67,11 +67,11 @@ def assign_episode(
             detail="Request not found",
         )
 
-    if episode.quality not in {"good", "usable"}:
+    if episode.quality != "good":
         raise HTTPException(
-            status_code=400,
-            detail="Only good or usable episodes can be assigned",
-        )
+        status_code=400,
+        detail="Only good episodes can be assigned",
+    )
 
     existing = (
         db.query(Assignment)

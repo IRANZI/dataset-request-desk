@@ -17,7 +17,6 @@ KNOWN_ROBOTS = {
 
 VALID_QUALITY = {
     "good",
-    "usable",
     "bad",
 }
 
