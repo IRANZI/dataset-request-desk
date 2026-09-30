@@ -1,28 +1,22 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.auth.dependencies import require_roles
 from app.database import get_db
-from app.models import Episode, Request, StatusHistory, User
+from app.models import Episode, Request, User
 
 
-router = APIRouter(
-    prefix="/analytics",
-    tags=["Analytics"],
-)
+router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
 @router.get("/episodes-per-day")
 def episodes_per_day(
-    start_date: date,
-    end_date: date,
-    current_user: User = Depends(
-        require_roles("operator", "admin")
-    ),
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
     rows = (
@@ -32,10 +26,8 @@ def episodes_per_day(
             func.count(Episode.id).label("count"),
         )
         .filter(
-            func.date(Episode.recorded_at)
-            >= start_date,
-            func.date(Episode.recorded_at)
-            <= end_date,
+            func.date(Episode.recorded_at) >= start_date,
+            func.date(Episode.recorded_at) <= end_date,
         )
         .group_by(
             func.date(Episode.recorded_at),
@@ -60,9 +52,7 @@ def episodes_per_day(
 
 @router.get("/requests")
 def request_analytics(
-    current_user: User = Depends(
-        require_roles("operator", "admin")
-    ),
+    current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
     rows = (
@@ -71,6 +61,7 @@ def request_analytics(
             func.count(Request.id).label("count"),
         )
         .group_by(Request.status)
+        .order_by(Request.status)
         .all()
     )
 
@@ -85,9 +76,7 @@ def request_analytics(
 
 @router.get("/top-tasks")
 def top_tasks(
-    current_user: User = Depends(
-        require_roles("operator", "admin")
-    ),
+    current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
     rows = (
@@ -97,9 +86,7 @@ def top_tasks(
         )
         .filter(Episode.quality == "good")
         .group_by(Episode.task_name)
-        .order_by(
-            func.count(Episode.id).desc()
-        )
+        .order_by(func.count(Episode.id).desc())
         .limit(5)
         .all()
     )
@@ -115,35 +102,28 @@ def top_tasks(
 
 @router.get("/delivery-time")
 def delivery_time(
-    current_user: User = Depends(
-        require_roles("operator", "admin")
-    ),
+    current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
     result = db.execute(
         text(
             """
-            SELECT
-                percentile_cont(0.5)
-                WITHIN GROUP (
-                    ORDER BY
-                    EXTRACT(
-                        EPOCH FROM (
-                            delivered.changed_at
-                            - submitted.changed_at
-                        )
+            SELECT percentile_cont(0.5)
+            WITHIN GROUP (
+                ORDER BY EXTRACT(
+                    EPOCH FROM (
+                        delivered.changed_at - requests.created_at
                     )
-                ) AS median_seconds
-            FROM status_history submitted
+                )
+            ) AS median_seconds
+            FROM requests
             JOIN status_history delivered
-                ON submitted.request_id =
-                   delivered.request_id
-            WHERE submitted.new_status = 'submitted'
-              AND delivered.new_status = 'delivered'
+                ON delivered.request_id = requests.id
+            WHERE delivered.new_status = 'delivered'
             """
         )
     ).scalar()
 
     return {
-        "median_seconds": result
+        "median_seconds": float(result) if result is not None else None
     }
