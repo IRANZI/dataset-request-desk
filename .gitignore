@@ -15,8 +15,6 @@ ENV/
 # =========================
 # Environment variables
 # =========================
-.env
-.env.*
 !.env.example
 
 # =========================
@@ -36,7 +34,6 @@ coverage.xml
 # =========================
 # IDE / Editors
 # =========================
-.vscode/
 .idea/
 *.code-workspace
 
@@ -81,3 +78,4 @@ logs/
 # =========================
 .mypy_cache/
 .ruff_cache/
+config.bat
