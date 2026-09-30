@@ -26,14 +26,16 @@ def create_request(
     current_user: User = Depends(require_roles("client")),
     db: Session = Depends(get_db),
 ):
+    task_name = " ".join(request_data.task_name.strip().lower().split())
+
     request = Request(
-        client_id=current_user.id,
-        task_name=request_data.task_name,
-        episodes_requested=request_data.episodes_requested,
-        deadline=request_data.deadline,
-        notes=request_data.notes,
-        status="submitted",
-    )
+    client_id=current_user.id,
+    task_name=task_name,
+    episodes_requested=request_data.episodes_requested,
+    deadline=request_data.deadline,
+    notes=request_data.notes,
+    status="submitted",
+)
 
     db.add(request)
     db.commit()
