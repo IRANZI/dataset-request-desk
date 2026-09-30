@@ -1,12 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
-from fastapi import UploadFile, File
-from app.services.import_service import import_episodes
 
 from app.auth.dependencies import require_roles
 from app.database import get_db
 from app.models import Assignment, Episode, Request, User
 from app.schemas.episode import EpisodeResponse
+from app.services.import_service import import_episodes
 
 
 router = APIRouter(prefix="/episodes", tags=["Episodes"])
@@ -16,9 +15,7 @@ router = APIRouter(prefix="/episodes", tags=["Episodes"])
 def list_episodes(
     task_name: str | None = None,
     quality: str | None = None,
-    current_user: User = Depends(
-        require_roles("operator", "admin")
-    ),
+    current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
     query = db.query(Episode)
@@ -34,7 +31,6 @@ def list_episodes(
     return query.order_by(Episode.recorded_at.desc()).all()
 
 
-
 @router.post("/{episode_id}/assign/{request_id}")
 def assign_episode(
     episode_id: int,
@@ -42,7 +38,11 @@ def assign_episode(
     current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
-    episode = db.query(Episode).filter(Episode.id == episode_id).first()
+    episode = (
+        db.query(Episode)
+        .filter(Episode.id == episode_id)
+        .first()
+    )
 
     if episode is None:
         raise HTTPException(
@@ -50,7 +50,11 @@ def assign_episode(
             detail="Episode not found",
         )
 
-    request = db.query(Request).filter(Request.id == request_id).first()
+    request = (
+        db.query(Request)
+        .filter(Request.id == request_id)
+        .first()
+    )
 
     if request is None:
         raise HTTPException(
@@ -58,14 +62,15 @@ def assign_episode(
             detail="Request not found",
         )
 
-    # Good and usable episodes can be assigned.
-    # Bad episodes can be imported, but cannot be assigned.
+    # Both "good" and "usable" episodes can be assigned.
+    # "bad" episodes can be imported but cannot be assigned.
     if episode.quality not in {"good", "usable"}:
         raise HTTPException(
             status_code=400,
             detail="Only good or usable episodes can be assigned",
         )
 
+    # An episode can belong to only one request.
     existing = (
         db.query(Assignment)
         .filter(Assignment.episode_id == episode.id)
@@ -78,7 +83,18 @@ def assign_episode(
             detail="Episode is already assigned to a request",
         )
 
-    if episode.task_name != request.task_name:
+    # Normalize task names before comparing them.
+    # This handles differences such as:
+    # "Pick Cup", " pick cup ", and "pick   cup".
+    episode_task = " ".join(
+        episode.task_name.strip().lower().split()
+    )
+
+    request_task = " ".join(
+        request.task_name.strip().lower().split()
+    )
+
+    if episode_task != request_task:
         raise HTTPException(
             status_code=400,
             detail="Episode task does not match request task",
@@ -101,13 +117,10 @@ def assign_episode(
     }
 
 
-
 @router.post("/import")
 def import_episode_csv(
     file: UploadFile = File(...),
-    current_user: User = Depends(
-        require_roles("operator", "admin")
-    ),
+    current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
     if not file.filename.lower().endswith(".csv"):
@@ -118,17 +131,12 @@ def import_episode_csv(
 
     temporary_path = f"temp_{file.filename}"
 
-    with open(
-        temporary_path,
-        "wb",
-    ) as output:
+    with open(temporary_path, "wb") as output:
         output.write(file.file.read())
 
     try:
-        return import_episodes(
-            db,
-            temporary_path,
-        )
+        return import_episodes(db, temporary_path)
+
     finally:
         import os
 
