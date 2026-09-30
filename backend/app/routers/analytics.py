@@ -49,6 +49,35 @@ def episodes_per_day(
         for row in rows
     ]
 
+@router.get("/summary")
+def analytics_summary(
+    current_user: User = Depends(require_roles("operator", "admin")),
+    db: Session = Depends(get_db),
+):
+    total_episodes = db.query(func.count(Episode.id)).scalar() or 0
+
+    total_requests = db.query(func.count(Request.id)).scalar() or 0
+
+    delivered_requests = (
+        db.query(func.count(Request.id))
+        .filter(Request.status == "delivered")
+        .scalar()
+        or 0
+    )
+
+    accepted_requests = (
+        db.query(func.count(Request.id))
+        .filter(Request.status == "accepted")
+        .scalar()
+        or 0
+    )
+
+    return {
+        "total_episodes": total_episodes,
+        "total_requests": total_requests,
+        "delivered_requests": delivered_requests,
+        "accepted_requests": accepted_requests,
+    }
 
 @router.get("/requests")
 def request_analytics(
