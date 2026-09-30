@@ -16,7 +16,7 @@ KNOWN_ROBOTS = {
 }
 
 # These are the quality values defined by the original requirements.
-VALID_QUALITY = {"good", "bad"}
+VALID_QUALITY = {"good", "bad", "usable"}
 
 
 def parse_recorded_at(value: str) -> datetime:

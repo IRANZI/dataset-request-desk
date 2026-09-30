@@ -34,20 +34,15 @@ def list_episodes(
     return query.order_by(Episode.recorded_at.desc()).all()
 
 
+
 @router.post("/{episode_id}/assign/{request_id}")
 def assign_episode(
     episode_id: int,
     request_id: int,
-    current_user: User = Depends(
-        require_roles("operator", "admin")
-    ),
+    current_user: User = Depends(require_roles("operator", "admin")),
     db: Session = Depends(get_db),
 ):
-    episode = (
-        db.query(Episode)
-        .filter(Episode.id == episode_id)
-        .first()
-    )
+    episode = db.query(Episode).filter(Episode.id == episode_id).first()
 
     if episode is None:
         raise HTTPException(
@@ -55,11 +50,7 @@ def assign_episode(
             detail="Episode not found",
         )
 
-    request = (
-        db.query(Request)
-        .filter(Request.id == request_id)
-        .first()
-    )
+    request = db.query(Request).filter(Request.id == request_id).first()
 
     if request is None:
         raise HTTPException(
@@ -67,11 +58,13 @@ def assign_episode(
             detail="Request not found",
         )
 
-    if episode.quality != "good":
+    # Good and usable episodes can be assigned.
+    # Bad episodes can be imported, but cannot be assigned.
+    if episode.quality not in {"good", "usable"}:
         raise HTTPException(
-        status_code=400,
-        detail="Only good episodes can be assigned",
-    )
+            status_code=400,
+            detail="Only good or usable episodes can be assigned",
+        )
 
     existing = (
         db.query(Assignment)
@@ -106,6 +99,8 @@ def assign_episode(
         "request_id": request.id,
         "episode_id": episode.id,
     }
+
+
 
 @router.post("/import")
 def import_episode_csv(

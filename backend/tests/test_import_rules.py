@@ -1,3 +1,4 @@
+
 def login(client, email, password):
     response = client.post(
         "/auth/login",
@@ -16,7 +17,34 @@ def auth_header(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_only_good_episode_can_be_assigned(client):
+def create_request(client, token):
+    response = client.post(
+        "/requests",
+        json={
+            "task_name": "pick cup",
+            "episodes_requested": 1,
+            "deadline": "2026-10-30",
+            "notes": "Assignment test",
+        },
+        headers=auth_header(token),
+    )
+
+    assert response.status_code == 201
+
+    return response.json()
+
+
+def move_request_to_in_progress(client, token, request_id):
+    response = client.patch(
+        f"/requests/{request_id}/status",
+        json={"status": "in_progress"},
+        headers=auth_header(token),
+    )
+
+    assert response.status_code == 200
+
+
+def test_bad_episode_cannot_be_assigned(client):
     operator_token = login(
         client,
         "ops1@example.com",
@@ -29,29 +57,23 @@ def test_only_good_episode_can_be_assigned(client):
         "client123",
     )
 
-    request_response = client.post(
-        "/requests",
-        json={
-            "task_name": "pick cup",
-            "episodes_requested": 1,
-            "deadline": "2026-10-30",
-            "notes": "Assignment test",
-        },
-        headers=auth_header(client_token),
+    request = create_request(
+        client,
+        client_token,
     )
 
-    request_id = request_response.json()["id"]
-
-    client.patch(
-        f"/requests/{request_id}/status",
-        json={"status": "in_progress"},
-        headers=auth_header(operator_token),
+    move_request_to_in_progress(
+        client,
+        operator_token,
+        request["id"],
     )
 
     episodes_response = client.get(
         "/episodes",
         headers=auth_header(operator_token),
     )
+
+    assert episodes_response.status_code == 200
 
     bad_episode = next(
         (
@@ -63,13 +85,63 @@ def test_only_good_episode_can_be_assigned(client):
         None,
     )
 
-    if bad_episode is None:
-        return
+    assert bad_episode is not None
 
     response = client.post(
-        f"/episodes/{bad_episode['id']}/assign/{request_id}",
+        f"/episodes/{bad_episode['id']}/assign/{request['id']}",
         headers=auth_header(operator_token),
     )
 
     assert response.status_code == 400
-    assert "Only good episodes" in response.json()["detail"]
+    assert "good or usable" in response.json()["detail"]
+
+
+def test_usable_episode_can_be_assigned(client):
+    operator_token = login(
+        client,
+        "ops1@example.com",
+        "ops123",
+    )
+
+    client_token = login(
+        client,
+        "client-a@example.com",
+        "client123",
+    )
+
+    request = create_request(
+        client,
+        client_token,
+    )
+
+    move_request_to_in_progress(
+        client,
+        operator_token,
+        request["id"],
+    )
+
+    episodes_response = client.get(
+        "/episodes",
+        headers=auth_header(operator_token),
+    )
+
+    assert episodes_response.status_code == 200
+
+    usable_episode = next(
+        (
+            episode
+            for episode in episodes_response.json()
+            if episode["quality"] == "usable"
+            and episode["task_name"] == "pick cup"
+        ),
+        None,
+    )
+
+    assert usable_episode is not None
+
+    response = client.post(
+        f"/episodes/{usable_episode['id']}/assign/{request['id']}",
+        headers=auth_header(operator_token),
+    )
+
+    assert response.status_code == 200
