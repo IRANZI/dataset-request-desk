@@ -17,5 +17,20 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build:
+      context: ./backend
+    container_name: dataset_desk_api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/dataset_desk
+      SECRET_KEY: change-this-development-secret-key
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+    ports:
+      - "8000:8000"
+
 volumes:
   postgres_data:
