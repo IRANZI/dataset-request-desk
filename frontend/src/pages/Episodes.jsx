@@ -1,8 +1,11 @@
+
 import { useEffect, useState } from "react";
+
 import api from "../services/api";
 
 const qualityStyles = {
   good: "bg-emerald-50 text-emerald-700",
+  usable: "bg-blue-50 text-blue-700",
   bad: "bg-red-50 text-red-700",
 };
 
@@ -21,16 +24,14 @@ function QualityBadge({ quality }) {
 export default function Episodes() {
   const [episodes, setEpisodes] = useState([]);
   const [requests, setRequests] = useState([]);
-
   const [taskName, setTaskName] = useState("");
   const [quality, setQuality] = useState("");
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   const [selectedEpisode, setSelectedEpisode] = useState(null);
   const [selectedRequest, setSelectedRequest] = useState("");
-
   const [assigning, setAssigning] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState(null);
@@ -99,30 +100,109 @@ export default function Episodes() {
     setSelectedEpisode(episode);
     setSelectedRequest("");
     setError("");
+    setSuccess("");
+  };
+
+  const closeAssignment = () => {
+    if (assigning) {
+      return;
+    }
+
+    setSelectedEpisode(null);
+    setSelectedRequest("");
+    setError("");
+    setSuccess("");
+  };
+
+  const normalizeTask = (value) => {
+    return value?.trim().toLowerCase().replace(/\s+/g, " ") || "";
   };
 
   const assignEpisode = async () => {
     if (!selectedEpisode || !selectedRequest) {
+      setError("Please select a matching request first.");
+      return;
+    }
+
+    const request = requests.find(
+      (item) => String(item.id) === String(selectedRequest)
+    );
+
+    if (!request) {
+      setError("The selected request could not be found.");
+      return;
+    }
+
+    const episodeTask = normalizeTask(
+      selectedEpisode.task_name
+    );
+
+    const requestTask = normalizeTask(
+      request.task_name
+    );
+
+    if (episodeTask !== requestTask) {
+      setError(
+        `This episode is for "${selectedEpisode.task_name}", but the selected request is for "${request.task_name}". Please select a matching request.`
+      );
+      return;
+    }
+
+    if (
+      selectedEpisode.quality !== "good" &&
+      selectedEpisode.quality !== "usable"
+    ) {
+      setError(
+        "Only good or usable episodes can be assigned."
+      );
       return;
     }
 
     try {
       setAssigning(true);
       setError("");
+      setSuccess("");
 
       await api.post(
         `/episodes/${selectedEpisode.id}/assign/${selectedRequest}`
       );
 
-      setSelectedEpisode(null);
-      setSelectedRequest("");
+      setSuccess(
+        `${selectedEpisode.episode_id} was assigned successfully.`
+      );
 
       await loadEpisodes();
+
+      setTimeout(() => {
+        setSelectedEpisode(null);
+        setSelectedRequest("");
+        setSuccess("");
+      }, 1200);
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          "Unable to assign episode."
-      );
+      const detail = err.response?.data?.detail;
+
+      if (detail === "Episode is already assigned to a request") {
+        setError(
+          "This episode has already been assigned to another request."
+        );
+      } else if (
+        detail === "Episode task does not match request task"
+      ) {
+        setError(
+          "This episode cannot be assigned because its task does not match the selected request."
+        );
+      } else if (
+        detail ===
+        "Only good or usable episodes can be assigned"
+      ) {
+        setError(
+          "This episode cannot be assigned because only good or usable episodes are accepted."
+        );
+      } else {
+        setError(
+          detail || "Unable to assign this episode. Please try again."
+        );
+      }
     } finally {
       setAssigning(false);
     }
@@ -155,6 +235,7 @@ export default function Episodes() {
     try {
       setImporting(true);
       setError("");
+      setSuccess("");
       setImportResult(null);
 
       const formData = new FormData();
@@ -167,6 +248,7 @@ export default function Episodes() {
 
       setImportResult(response.data);
       setSelectedFile(null);
+      setSuccess("Episode data imported successfully.");
 
       await loadEpisodes();
     } catch (err) {
@@ -179,12 +261,28 @@ export default function Episodes() {
     }
   };
 
-  const availableRequests = requests.filter(
-    (request) =>
+  const availableRequests = requests.filter((request) => {
+    return (
       request.status === "in_progress" ||
       request.status === "submitted" ||
       request.status === "rejected"
-  );
+    );
+  });
+
+  const matchingRequests = selectedEpisode
+    ? availableRequests.filter(
+        (request) =>
+          normalizeTask(request.task_name) ===
+          normalizeTask(selectedEpisode.task_name)
+      )
+    : [];
+
+  const canAssign = (episode) => {
+    return (
+      episode.quality === "good" ||
+      episode.quality === "usable"
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -203,10 +301,19 @@ export default function Episodes() {
         </p>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+      {/* Global success message */}
+      {success && !selectedEpisode && (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <span className="font-bold">✓</span>
+          <span>{success}</span>
+        </div>
+      )}
+
+      {/* Global error */}
+      {error && !selectedEpisode && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <span className="font-bold">!</span>
+          <span>{error}</span>
         </div>
       )}
 
@@ -225,9 +332,7 @@ export default function Episodes() {
 
           <div className="flex flex-col gap-3 sm:flex-row">
             <label className="cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-              {selectedFile
-                ? selectedFile.name
-                : "Choose CSV"}
+              {selectedFile ? selectedFile.name : "Choose CSV"}
 
               <input
                 type="file"
@@ -247,7 +352,6 @@ export default function Episodes() {
           </div>
         </div>
 
-        {/* Import result */}
         {importResult && (
           <div className="mt-5 rounded-xl border border-emerald-100 bg-emerald-50 p-4">
             <div className="flex flex-wrap gap-6">
@@ -255,6 +359,7 @@ export default function Episodes() {
                 <p className="text-xs font-medium text-emerald-600">
                   Imported
                 </p>
+
                 <p className="mt-1 text-2xl font-bold text-emerald-800">
                   {importResult.imported}
                 </p>
@@ -264,6 +369,7 @@ export default function Episodes() {
                 <p className="text-xs font-medium text-emerald-600">
                   Skipped
                 </p>
+
                 <p className="mt-1 text-2xl font-bold text-emerald-800">
                   {importResult.skipped}
                 </p>
@@ -273,6 +379,7 @@ export default function Episodes() {
                 <p className="text-xs font-medium text-emerald-600">
                   Total processed
                 </p>
+
                 <p className="mt-1 text-2xl font-bold text-emerald-800">
                   {importResult.imported +
                     importResult.skipped}
@@ -340,6 +447,7 @@ export default function Episodes() {
             >
               <option value="">All quality</option>
               <option value="good">Good</option>
+              <option value="usable">Usable</option>
               <option value="bad">Bad</option>
             </select>
           </div>
@@ -391,27 +499,13 @@ export default function Episodes() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wider text-slate-400">
-                    <th className="px-6 py-4">
-                      Episode
-                    </th>
-                    <th className="px-6 py-4">
-                      Robot
-                    </th>
-                    <th className="px-6 py-4">
-                      Task
-                    </th>
-                    <th className="px-6 py-4">
-                      Duration
-                    </th>
-                    <th className="px-6 py-4">
-                      Operator
-                    </th>
-                    <th className="px-6 py-4">
-                      Quality
-                    </th>
-                    <th className="px-6 py-4">
-                      Action
-                    </th>
+                    <th className="px-6 py-4">Episode</th>
+                    <th className="px-6 py-4">Robot</th>
+                    <th className="px-6 py-4">Task</th>
+                    <th className="px-6 py-4">Duration</th>
+                    <th className="px-6 py-4">Operator</th>
+                    <th className="px-6 py-4">Quality</th>
+                    <th className="px-6 py-4">Action</th>
                   </tr>
                 </thead>
 
@@ -425,6 +519,7 @@ export default function Episodes() {
                         <p className="font-semibold text-slate-900">
                           {episode.episode_id}
                         </p>
+
                         <p className="mt-1 text-xs text-slate-400">
                           #{episode.id}
                         </p>
@@ -453,7 +548,7 @@ export default function Episodes() {
                       </td>
 
                       <td className="px-6 py-5">
-                        {episode.quality === "good" ? (
+                        {canAssign(episode) ? (
                           <button
                             onClick={() =>
                               openAssignment(episode)
@@ -508,7 +603,7 @@ export default function Episodes() {
                     </p>
                   </div>
 
-                  {episode.quality === "good" && (
+                  {canAssign(episode) && (
                     <button
                       onClick={() =>
                         openAssignment(episode)
@@ -542,39 +637,98 @@ export default function Episodes() {
                 {selectedEpisode.task_name} ·{" "}
                 {selectedEpisode.robot_id}
               </p>
+
+              <div className="mt-3">
+                <QualityBadge
+                  quality={selectedEpisode.quality}
+                />
+              </div>
             </div>
+
+            {/* Assignment error */}
+            {error && (
+              <div className="mb-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <span className="font-bold">!</span>
+
+                <div>
+                  <p className="font-semibold">
+                    Assignment failed
+                  </p>
+
+                  <p className="mt-1">
+                    {error}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Assignment success */}
+            {success && (
+              <div className="mb-5 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                <span className="font-bold">✓</span>
+
+                <div>
+                  <p className="font-semibold">
+                    Assignment successful
+                  </p>
+
+                  <p className="mt-1">
+                    {success}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <label className="mb-2 block text-sm font-semibold text-slate-700">
               Request
             </label>
 
-            <select
-              value={selectedRequest}
-              onChange={(event) =>
-                setSelectedRequest(event.target.value)
-              }
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
-            >
-              <option value="">
-                Select a request
-              </option>
-
-              {availableRequests.map((request) => (
-                <option
-                  key={request.id}
-                  value={request.id}
-                >
-                  #{request.id} — {request.task_name} —{" "}
-                  {request.status}
+            {matchingRequests.length > 0 ? (
+              <select
+                value={selectedRequest}
+                onChange={(event) => {
+                  setSelectedRequest(event.target.value);
+                  setError("");
+                }}
+                disabled={assigning}
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-50 disabled:bg-slate-50"
+              >
+                <option value="">
+                  Select a request
                 </option>
-              ))}
-            </select>
+
+                {matchingRequests.map((request) => (
+                  <option
+                    key={request.id}
+                    value={request.id}
+                  >
+                    #{request.id} — {request.task_name} —{" "}
+                    {request.status}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                <p className="font-semibold">
+                  No matching request available
+                </p>
+
+                <p className="mt-1">
+                  There is currently no active request for
+                  "{selectedEpisode.task_name}".
+                </p>
+              </div>
+            )}
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <button
                 onClick={assignEpisode}
-                disabled={!selectedRequest || assigning}
-                className="flex-1 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                disabled={
+                  !selectedRequest ||
+                  assigning ||
+                  matchingRequests.length === 0
+                }
+                className="flex-1 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {assigning
                   ? "Assigning..."
@@ -582,8 +736,9 @@ export default function Episodes() {
               </button>
 
               <button
-                onClick={() => setSelectedEpisode(null)}
-                className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                onClick={closeAssignment}
+                disabled={assigning}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
               >
                 Cancel
               </button>
