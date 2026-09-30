@@ -1,4 +1,8 @@
 
+from app.database import SessionLocal
+from app.models import Assignment
+
+
 def login(client, email, password):
     response = client.post(
         "/auth/login",
@@ -42,6 +46,29 @@ def move_request_to_in_progress(client, token, request_id):
     )
 
     assert response.status_code == 200
+
+
+def find_unassigned_episode(episodes, quality):
+    db = SessionLocal()
+
+    try:
+        assigned_episode_ids = {
+            assignment.episode_id
+            for assignment in db.query(Assignment).all()
+        }
+
+        for episode in episodes:
+            if (
+                episode["quality"] == quality
+                and episode["task_name"] == "pick cup"
+                and episode["id"] not in assigned_episode_ids
+            ):
+                return episode
+
+        return None
+
+    finally:
+        db.close()
 
 
 def test_bad_episode_cannot_be_assigned(client):
@@ -127,14 +154,9 @@ def test_usable_episode_can_be_assigned(client):
 
     assert episodes_response.status_code == 200
 
-    usable_episode = next(
-        (
-            episode
-            for episode in episodes_response.json()
-            if episode["quality"] == "usable"
-            and episode["task_name"] == "pick cup"
-        ),
-        None,
+    usable_episode = find_unassigned_episode(
+        episodes_response.json(),
+        "usable",
     )
 
     assert usable_episode is not None
@@ -145,3 +167,4 @@ def test_usable_episode_can_be_assigned(client):
     )
 
     assert response.status_code == 200
+    assert response.json()["message"] == "Episode assigned successfully"

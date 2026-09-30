@@ -30,21 +30,21 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/dataset_desk
       SECRET_KEY: change-this-development-secret-key
       ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
     ports:
       - "8000:8000"
 
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
     container_name: dataset_desk_frontend
     restart: unless-stopped
     depends_on:
       - api
-    environment:
-      VITE_API_URL: http://localhost:8000
     ports:
-      - "5173:5173"
+      - "5173:80"
 
 volumes:
   postgres_data:
-
