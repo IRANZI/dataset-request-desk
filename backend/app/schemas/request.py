@@ -1,12 +1,20 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RequestCreate(BaseModel):
-    task_name: str = Field(min_length=1, max_length=255)
-    episodes_requested: int = Field(gt=0)
+    task_name: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+
+    episodes_requested: int = Field(
+        gt=0
+    )
+
     deadline: date
+
     notes: str | None = None
 
 
@@ -15,10 +23,16 @@ class RequestResponse(BaseModel):
     client_id: int
     task_name: str
     episodes_requested: int
+    assigned_count: int = 0
     deadline: date
     notes: str | None
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
+class RequestStatusUpdate(BaseModel):
+    status: str
