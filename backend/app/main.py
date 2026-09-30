@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.auth import router as auth_router
 from app.routers.users import router as users_router
@@ -9,14 +10,29 @@ from app.routers.analytics import router as analytics_router
 from app.middleware import request_logging_middleware
 
 
+
 app = FastAPI(
     title="Dataset Request Desk API",
     version="1.0.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 app.middleware("http")(
     request_logging_middleware
 )
+
+
 
 app.include_router(auth_router)
 app.include_router(users_router)
